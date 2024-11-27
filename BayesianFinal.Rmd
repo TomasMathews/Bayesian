@@ -1,0 +1,1130 @@
+---
+title: "BayesianFinal"
+author: "Tomas Mathews"
+date: "2024-11-12"
+output: html_document
+---
+
+```{r}
+#Chunk 1
+rm(list=ls())
+set.seed(123)
+library(ggplot2)
+library(patchwork)
+#if (!requireNamespace("tictoc", quietly = TRUE)) install.packages("tictoc")
+library(tictoc)
+```
+
+```{r}
+#Chunk 2
+K<- 80000  #no. of prior samples
+nsamples <-1000 # No. of posterior samples to take
+pred_point <-2.5 # value at which to compute the predictive distribution
+```
+
+```{r}
+#Chunk 3
+#Prior parameters: normal on alpha and beta, gamma on tau
+alphamean=0
+alphavar = 100
+beta1mean=0
+beta1var=100
+beta2mean = 0
+beta2var= 100
+taushape=1
+tauscale=1
+```
+
+```{r}
+#Chunk 4
+#True parameter values
+alphaT = 2.5
+betaT1 = -3
+betaT2 = 0.8
+tauT = 1
+```
+
+
+```{r}
+#Chunk 5
+#Simulating the data
+set.seed(123)
+
+x1 <- rnorm(200, mean = 0, sd=10)
+x2 <- rnorm(200, mean = 0, sd=10)
+
+n=length(x1)
+
+error = rnorm(n, mean=0, sd=(1/tauT))
+
+y = alphaT + betaT1*x1 + betaT2*x2 + error
+data<-data.frame(y,x1,x2)
+
+ggplot(data, aes(x2,y))+geom_point()
+ggplot(data,aes(x1,y))+geom_point()
+```
+
+
+
+
+
+
+
+########################################################################################
+```{r}
+#Chunk 6
+#Using importance sampling
+tic("Importance Sampling")
+set.seed(123)
+logweights = list()
+
+sumalpha <- numeric()
+sumbeta1 <- numeric()
+sumbeta2<- numeric()
+sumtau <- numeric()
+
+#Setting the loop for the posterior samples
+for (i in 1:nsamples){
+  #Getting the k samples from priors
+  palpha <- rnorm(K,alphamean,sqrt(alphavar))
+  pbeta1 <- rnorm(K,beta1mean,sqrt(beta1var))
+  pbeta2<- rnorm(K,beta2mean,sqrt(beta2var))
+  ptau <-rgamma(K,shape=taushape,scale=tauscale)
+  
+  z <- (1/2)*n*log(ptau) - (1/2)*n*log(2*pi)
+  for (j in 1:n){
+    likelihood <- y[j] - palpha - pbeta1*x1[[j]] - pbeta2*x2[[j]]
+    logweights[[j]] <- (ptau/2)*(likelihood*likelihood)
+  }
+  #Calculating weights
+  logweights <- data.frame(logweights)
+  logweights1 <- rowSums(logweights)
+  logweights2 <- z - logweights1
+  likelihoodlums <- exp(logweights2)
+  weights <- (likelihoodlums/sum(likelihoodlums))
+  
+  sumalpha[i] <- sum(palpha*weights)
+  sumbeta1[i] <- sum(pbeta1*weights)
+  sumbeta2[i] <- sum(pbeta2*weights) 
+  sumtau[i] <- sum(ptau*weights)
+}
+toc()
+```
+
+```{r}
+#Chunk 7
+#Obtaining estimated value for parameters
+pos_alpha = mean(sumalpha)
+pos_alpha
+
+pos_beta1 = mean(sumbeta1)
+pos_beta1
+
+pos_beta2= mean(sumbeta2)
+pos_beta2
+
+pos_tau = sqrt(mean(sumtau))
+pos_tau
+
+
+```
+```{r}
+#Chunk 8
+# Create a data frame of sampled posterior values
+posterior_samples <- data.frame(
+  alpha = sumalpha,
+  beta1 = sumbeta1,
+  beta2 = sumbeta2,
+  tau = sumtau
+)
+par(mfrow = c(2,4))
+ggplot(posterior_samples, aes(x = alpha, y = beta1)) +
+  geom_point(alpha = 0.5) +  # alpha controls transparency
+  labs(title = "Posterior Samples: Alpha vs Beta1",
+       x = "Alpha",
+       y = "Beta1") +
+  theme_minimal()
+
+ggplot(posterior_samples, aes(x = alpha, y = beta2)) +
+  geom_point(alpha = 0.5) +
+  labs(title = "Posterior Samples: Alpha vs Beta2",
+       x = "Alpha",
+       y = "Beta2") +
+  theme_minimal()
+
+ggplot(posterior_samples, aes(x = alpha, y = tau)) +
+  geom_point(alpha = 0.5) +
+  labs(title = "Posterior Samples: Alpha vs Tau",
+       x = "Alpha",
+       y = "Tau") +
+  theme_minimal()
+
+ggplot(posterior_samples, aes(x = beta1, y = beta2)) +
+  geom_point(alpha = 0.5) +
+  labs(title = "Posterior Samples: Beta1 vs Beta2",
+       x = "Beta1",
+       y = "Beta2") +
+  theme_minimal()
+
+# Scatter plot: beta1 vs tau
+ggplot(posterior_samples, aes(x = beta1, y = tau)) +
+  geom_point(alpha = 0.5) +
+  labs(title = "Posterior Samples: Beta1 vs Tau",
+       x = "Beta1",
+       y = "Tau") +
+  theme_minimal()
+```
+```{r}
+#Chunk 9
+# Scatter plot: alpha vs beta1
+plot1 <- ggplot(posterior_samples, aes(x = alpha, y = beta1)) +
+  geom_point(alpha = 0.5) +
+  labs(title = "Alpha vs Beta1", x = "Alpha", y = "Beta1") +
+  theme_minimal()
+
+# Scatter plot: alpha vs beta2
+plot2 <- ggplot(posterior_samples, aes(x = alpha, y = beta2)) +
+  geom_point(alpha = 0.5) +
+  labs(title = "Alpha vs Beta2", x = "Alpha", y = "Beta2") +
+  theme_minimal()
+
+# Scatter plot: alpha vs tau
+plot3 <- ggplot(posterior_samples, aes(x = alpha, y = tau)) +
+  geom_point(alpha = 0.5) +
+  labs(title = "Alpha vs Tau", x = "Alpha", y = "Tau") +
+  theme_minimal()
+
+# Scatter plot: beta1 vs beta2
+#plot4 <- ggplot(posterior_samples, aes(x = beta1, y = beta2)) +
+#  geom_point(alpha = 0.5) +
+#  labs(title = "Beta1 vs Beta2", x = "Beta1", y = "Beta2") +
+#  theme_minimal()
+
+# Scatter plot: beta1 vs tau
+plot5 <- ggplot(posterior_samples, aes(x = beta1, y = tau)) +
+  geom_point(alpha = 0.5) +
+  labs(title = "Beta1 vs Tau", x = "Beta1", y = "Tau") +
+  theme_minimal()
+
+plot6 <- ggplot(posterior_samples, aes(x = beta2, y = tau)) +
+  geom_point(alpha = 0.5) +
+  labs(title = "Beta2 vs Tau", x = "Beta2", y = "Tau") +
+  theme_minimal()
+
+# Arrange all plots in a grid layout using patchwork
+combined_plot <- (plot1 | plot2) / (plot3 | plot5|plot6)
+print(combined_plot)
+
+```
+```{r}
+#Chunk 10
+#Plotting histograms
+Alpha_values <- sumalpha
+Beta1_values<-sumbeta1
+Beta2_values <-sumbeta2
+Tau_values<- sumtau
+
+#hist(Alpha_values)
+#hist(Beta1_values)
+#hist(Beta2_values)
+#hist(Tau_values)
+#png("importancehist.png", width = 800, height = 800)
+par(mfrow = c(2, 2))  # Set up a 2x2 plotting grid
+
+# Alpha
+hist(Alpha_values, main = "", xlab = "Alpha Values", col = "grey", border = "white")
+abline(v = alphaT, col = "red", lwd = 2)       # Red line for true value
+abline(v = pos_alpha, col = "black", lwd = 2) # Black line for estimated value
+
+# Beta1
+hist(Beta1_values, main = "", xlab = "Beta1 Values", col = "grey", border = "white")
+abline(v = betaT1, col = "red", lwd = 2)
+abline(v = pos_beta1, col = "black", lwd = 2)
+
+# Beta2
+hist(Beta2_values, main = "", xlab = "Beta2 Values", col = "grey", border = "white")
+abline(v = betaT2, col = "red", lwd = 2)
+abline(v = pos_beta2, col = "black", lwd = 2)
+
+# Tau
+hist(Tau_values, main = "", xlab = "Tau Values", col = "grey", border = "white")
+abline(v =tauT, col = "red", lwd = 2)
+abline(v = pos_tau, col = "black", lwd = 2)
+
+par(mfrow = c(1, 1))  # Reset the plotting layout
+```
+
+```{r}
+#Chunk 11
+# Sort the samples
+sorted_alpha <- sort(sumalpha)
+sorted_beta1 <- sort(sumbeta1)
+sorted_beta2 <- sort(sumbeta2)
+sorted_tau <- sort(sumtau)
+
+# Compute cumulative probability distribution
+cum_prob <- seq(1/nsamples, 1, by = 1/nsamples)
+
+# Find quantiles for credible intervals
+alpha_credible_interval <- quantile(sorted_alpha, c(0.025, 0.975))
+beta1_credible_interval <- quantile(sorted_beta1, c(0.025, 0.975))
+beta2_credible_interval <- quantile(sorted_beta2, c(0.025, 0.975))
+tau_credible_interval <- quantile(sorted_tau, c(0.025, 0.975))
+
+# Print credible intervals
+cat("Credible interval for alpha:", alpha_credible_interval, "\n")
+cat("Credible interval for beta1:", beta1_credible_interval, "\n")
+cat("Credible interval for beta2:", beta2_credible_interval, "\n")
+cat("Credible interval for tau:", tau_credible_interval, "\n")
+```
+
+
+Estimating the normalising constant
+```{r}
+#Chunk 12
+##this needs updated
+set.seed(123)
+alphasamples = rnorm(K,alphamean,sqrt(alphavar))
+betasamples = rnorm(K,beta1mean,sqrt(beta1var))
+beta2samples = rnorm(K,beta2mean,sqrt(beta2var))
+tausamples = rgamma(K,taushape,tauscale)
+norm_temp = 0.5*n*log(tausamples/(2*pi));
+
+
+for (j in 1:n){
+  
+    norm_temp = norm_temp - tausamples*((y[j]-alphasamples - betasamples*x1[[j]]-beta2samples*x2[[j]])^2)/2;
+}
+norm_constant = mean(exp(norm_temp));
+norm_constant
+
+```
+
+
+
+
+#####################################################################################
+```{r}
+#Chunk 13
+#Installing LS means packages
+#install.packages("lsmeans")
+library(lsmeans)
+```
+
+```{r}
+#Chunk 14
+#Performing Ls means
+set.seed(123)
+lsmeans_results2<-lm(y~x1+x2, data)
+summary(lsmeans_results2)
+confint(lsmeans_results2)
+
+anova(lsmeans_results2)
+sum(lsmeans_results2$residuals^2)/qchisq(0.975,df=21)
+sum(lsmeans_results2$residuals^2)/qchisq(0.025,df=21)
+
+```
+```{r}
+# Perform the LS means
+set.seed(123)
+lsmeans_results2 <- lm(y ~ x1 + x2, data)
+
+# Summary of the model
+summary(lsmeans_results2)
+
+# Confidence intervals for the model coefficients
+confint(lsmeans_results2)
+
+# ANOVA of the model
+anova(lsmeans_results2)
+
+# Calculate the residual variance confidence interval
+RSS <- sum(lsmeans_results2$residuals^2)  # Residual sum of squares
+df <- lsmeans_results2$df.residual        # Degrees of freedom for residuals
+
+# Confidence interval for the residual variance
+lower_CI <- RSS / qchisq(0.975, df = df)  # Lower bound
+upper_CI <- RSS / qchisq(0.025, df = df)  # Upper bound
+
+c(lower_CI, upper_CI)
+
+
+
+```
+######################################################################################
+
+metropolis hastings hard coded:
+```{r}
+#Chunk 15
+#rm(list=ls())
+set.seed(123)
+likelihood = function(param){
+    a = param[1]
+    b = param[2]
+    c = param[3]
+    sd = param[4]
+    
+ 
+    pred = a + b*x1 + c*x2
+    singlelikelihoods = dnorm(y, mean = pred, sd = (sd), log = T)
+    sumll = sum(singlelikelihoods)
+    return(sumll)
+}
+```
+
+
+
+
+
+
+
+```{r}
+#Chunk 16
+###prior set up Chunk 12
+prior = function(param){
+    a = param[1]
+    b = param[2]
+    c = param[3]
+    sd = param[4]
+    
+    aprior = dunif(a, min=0, max=10, log = T)
+    bprior = dnorm(b, sd = 5, log = T)
+    sdprior = dunif(sd, min=0, max=30, log = T)
+    cprior = dnorm(c, sd=5, log= T)
+    return(aprior+bprior+cprior+sdprior)
+}
+```
+
+
+```{r}
+#Chunk 17
+####posterior set up Chunk 13
+posterior = function(param){
+  return (likelihood(param) +prior(param))
+}
+```
+
+
+```{r}
+#Chunk 18
+###proposal set up Chunk 14
+proposalfunction = function(param){
+   mhalpha = param[1]
+   mhbeta = param[2]
+   mhc = param[3]
+   mhtau = param[4]
+   
+ #  
+ #  
+   aproposal<-rnorm(1,mhalpha,0.1^2)
+   bproposal<-rnorm(1, mhbeta, 0.1^2)
+   cproposal<-rnorm(1, mhc, 0.1^2)
+  Tproposal<-runif(1, max(0, mhtau-.2), mhtau+.2)
+  
+ # 
+   proposals<-c(aproposal,bproposal, cproposal, Tproposal)
+  return(proposals)
+}
+```
+
+
+
+
+```{r}
+#Chunk 19
+####function call
+#Chunk 15
+run_metropolis_MCMC = function(startvalue, iterations){
+    chain = array(dim = c(iterations+1,4))
+    chain[1,] = startvalue
+    for (i in 1:iterations){
+        proposal = proposalfunction(chain[i,])
+ 
+        probab = exp(posterior(proposal) - posterior(chain[i,]))
+       # print(chain[i,])
+      #  print(probab)
+       # print(proposal)
+        #print(posterior(proposal))
+        #print(posterior(chain[i,]))
+        if (runif(1) < probab){
+            chain[i+1,] = proposal
+        }else{
+            chain[i+1,] = chain[i,]
+        }
+    }
+    return(chain)
+}
+ 
+```
+
+
+```{r}
+###running a call
+#Chunk 20
+tic("Metropolis-Hastings sampling")
+startvalue = c(4,0,10,2)
+chain = run_metropolis_MCMC(startvalue, 1000000)
+ 
+burnIn = 50000
+acceptance = 1-mean(duplicated(chain[-(1:burnIn),]))
+
+MHalpha<-mean(chain[burnIn:1000000,1])
+MHbeta<-mean(chain[burnIn:1000000,2])
+MHc<-mean(chain[burnIn:1000000,3])
+MHTau<-mean(chain[burnIn:1000000,4])
+
+print(MHalpha)
+print(MHbeta)
+print(MHc)
+print(MHTau)
+toc()
+```
+```{r}
+#Chunk 21
+str(chain)
+# Define burn-in period and calculate acceptance rate
+burnIn = 50000
+post_burnin_chain = chain[-(1:burnIn), ]  # Exclude the burn-in period
+
+# Calculate the acceptance rate by identifying unique rows
+acceptance = 1 - mean(duplicated(post_burnin_chain))
+
+# Print the acceptance rate
+print(acceptance)
+
+#acceptance = 1 - mean(duplicated(chain[-(1:burnIn), ]))
+#print(acceptence)
+
+```
+```{r}
+#Chunk 22
+#plotting histograms and trace plots
+#png("metrohist.png", width = 1500, height = 800)
+par(mfrow = c(2,4))
+hist(chain[-(1:burnIn),1],nclass=30, , main="Posterior of alpha", xlab="True value = red line" )
+abline(v = mean(chain[-(1:burnIn),1]))
+abline(v = alphaT, col="red" )
+hist(chain[-(1:burnIn),2],nclass=30, main="Posterior of beta1", xlab="True value = red line")
+abline(v = mean(chain[-(1:burnIn),2]))
+abline(v = betaT1, col="red" )
+hist(chain[-(1:burnIn),3],nclass=30, , main="Posterior of beta2", xlab="True value = red line" )
+abline(v = mean(chain[-(1:burnIn),3]))
+abline(v = betaT2, col="red" )
+hist(chain[-(1:burnIn),4],nclass=30, main="Posterior of tau", xlab="True value = red line")
+abline(v = mean(chain[-(1:burnIn),4]) )
+abline(v = tauT, col="red" )
+
+
+
+plot(chain[-(1:burnIn),1], type = "l", xlab="Iteration",ylab="alpha" , main = "Chain values of alpha", )
+abline(h = alphaT, col="red" )
+plot(chain[-(1:burnIn),2], type = "l", xlab="Iteration" ,ylab="beta1", main = "Chain values of beta1", )
+abline(h = betaT1, col="red" )
+plot(chain[-(1:burnIn),3], type = "l", xlab="Iteration" ,ylab="beta2", main = "Chain values of beta2", )
+abline(h = betaT2, col="red" )
+plot(chain[-(1:burnIn),4], type = "l", xlab="Iteration" ,ylab="tau", main = "Chain values of tau", )
+abline(h = tauT, col="red" )
+
+
+iterations<-1000000
+# Extract the samples after burn-in
+posterior_samples <- chain[burnIn:iterations, ]
+
+# Calculate credible intervals for each parameter
+credible_intervals <- apply(posterior_samples, 2, function(x) quantile(x, c(0.025, 0.975)))
+
+# Print credible intervals
+print("Credible Intervals:")
+print(paste("Alpha:", credible_intervals[1, 1], "-", credible_intervals[2, 1]))
+print(paste("Beta1:", credible_intervals[1, 2], "-", credible_intervals[2, 2]))
+print(paste("Beta2:", credible_intervals[1, 3], "-", credible_intervals[2, 3]))
+print(paste("Tau:", credible_intervals[1, 4], "-", credible_intervals[2, 4]))
+
+```
+Metropolis-Hastings R
+```{r}
+#Chunk 23
+#Installing packages
+#install.packages("metropolis")
+library(metropolis)
+library(coda)
+```
+
+
+```{r}
+#Chunk 24
+# Create a formula for the model
+formula <- y ~ x1 + x2
+
+# Run Metropolis-Hastings sampling using metropolis.glm
+set.seed(123)  # Set seed for reproducibility
+res = metropolis_glm(formula, data=data, family=gaussian(), iter=200000, burnin=50000,
+adapt=TRUE, guided=TRUE, block=FALSE)
+res2 = as.mcmc(res)
+summary(res2)
+```
+
+```{r}
+#Chunk 25
+# Extract the posterior samples for alpha (intercept), beta1, beta2, and tau
+b0_samples <- res2[, "b_0"]
+b1_samples <- res2[, "b_1"]
+b2_samples <- res2[, "b_2"]
+logsigma_samples <- res2[, "logsigma"]
+sigma_samples <- exp(logsigma_samples)
+
+print(mean(b0_samples))
+print(mean(b1_samples))
+print(mean(b2_samples))
+print(mean(sigma_samples))
+# Plot the traceplots with red lines for actual values
+#par(mfrow=c(2,2))  # Create a 2x2 grid for the trace plots
+# Alpha traceplot with actual value
+#plot(b0_samples, type='l', main="Traceplot of Alpha", col='black')
+#abline(h=alphaT, col='red', lwd=2)
+
+# Beta1 traceplot with actual value
+#plot(b1_samples, type='l', main="Traceplot of Beta1", col='black')
+#abline(h=betaT1, col='red', lwd=2)
+
+# Beta2 traceplot with actual value
+#plot(b2_samples, type='l', main="Traceplot of Beta2", col='black')
+#abline(h=betaT2, col='red', lwd=2)
+
+# Tau traceplot with actual value
+#plot(logsigma_samples, type='l', main="Traceplot of Tau", col='black')
+#abline(h=tauT, col='red', lwd=2)
+
+# Reset plotting layout
+#par(mfrow=c(1,1))
+
+#plotting histograms and trace plots
+par(mfrow = c(2,4))
+hist(b0_samples, nclass=30, , main="Posterior of alpha", xlab="Alpha Values" )
+abline(v = mean(b0_samples))
+abline(v = alphaT, col="red" )
+hist(b1_samples,nclass=30, main="Posterior of beta1", xlab="Beta1 values")
+abline(v = mean(b1_samples))
+abline(v = betaT1, col="red" )
+hist(b2_samples,nclass=30, main="Posterior of beta2", xlab="Beta2 Values")
+abline(v = mean(b2_samples) )
+abline(v = betaT2, col="red" )
+hist(sigma_samples,nclass=30, , main="Posterior of tau", xlab="Tau Values" )
+abline(v = mean(sigma_samples))
+abline(v = tauT, col="red" )
+
+
+
+#plot(b0_samples, type = "l", xlab="True value = red line" , main = "Chain values of a", )
+#abline(h = alphaT, col="red" )
+#abline(v = mean(b0_samples))
+#plot(b1_samples, type = "l", xlab="True value = red line" , main = "Chain values of b", )
+#abline(h = betaT1, col="red" )
+#plot(b2_samples, type = "l", xlab="True value = red line" , main = "Chain values of sd",)
+#abline(h = tauT, col="red" )
+#plot(logsigma_samples, type = "l", xlab="True value = red line" , main = "Chain values of c", )
+#abline(h = betaT2, col="red" )
+
+# Plot the trace plot for b0_samples (alpha)
+burn_in_range_metro <- 1:50000 
+# Define burn-in period and calculate acceptance rate
+# Calculate the acceptance rate
+acceptance_rate <- 1 - mean(duplicated(res2))
+cat("Acceptance Rate:", acceptance_rate, "\n")
+
+plot(burn_in_range_metro,b0_samples[burn_in_range_metro], type = "l", xlab="Iterations",ylab="alpha", main = "Trace plot of Alpha")
+abline(h = mean(b0_samples))
+abline(h = alphaT, col="red" )
+# Plot the trace plot for b1_samples (beta1)
+plot(burn_in_range_metro,b1_samples[burn_in_range_metro], type = "l", xlab="Iterations", ylab="Beta1",main = "Trace plot of Beta1")
+abline(h = mean(b1_samples))
+abline(h = betaT1, col="red" )
+# Plot the trace plot for b2_samples (tau)
+plot(burn_in_range_metro,b2_samples[burn_in_range_metro], type = "l", xlab="Iterations",ylab="Beta2", main = "Trace plot of Beta2")
+abline(h = mean(b2_samples) )
+abline(h = betaT2, col="red" )
+# Plot the trace plot for logsigma_samples (beta2)
+plot(burn_in_range_metro,sigma_samples[burn_in_range_metro], type = "l", xlab="Iterations",ylab="tau", main = "Trace plot of Tau")
+abline(h = mean(sigma_samples))
+abline(h = tauT, col="red" )
+
+# Calculate 95% credible intervals for each parameter
+b0_ci <- quantile(b0_samples, probs = c(0.025, 0.5, 0.975))
+b1_ci <- quantile(b1_samples, probs = c(0.025, 0.5, 0.975))
+b2_ci <- quantile(b2_samples, probs = c(0.025, 0.5, 0.975))
+sigma_quantiles <- quantile(sigma_samples, probs = c(0.025, 0.5, 0.975))
+
+# Print results
+cat("95% Credible Interval for b_0:", b0_ci[1], "-", b0_ci[3], "\n")
+cat("95% Credible Interval for b_1:", b1_ci[1], "-", b1_ci[3], "\n")
+cat("95% Credible Interval for b_2:", b2_ci[1], "-", b2_ci[3], "\n")
+cat("95% credible interval for sigma:", sigma_quantiles[1], "-", sigma_quantiles[3], "\n")
+```
+code might be useful the trace plots seem good 
+```{r}
+#Chunk 26
+# Set up the plotting layout with 2 rows and 4 columns (2 rows for histograms and trace plots)
+par(mfrow = c(2, 4))
+
+# Plot the histograms
+hist(b0_samples, nclass=30, main="Posterior of Alpha", xlab="Alpha values")
+abline(v = mean(b0_samples), col="black")
+abline(v = alphaT, col="red")
+
+hist(b1_samples, nclass=30, main="Posterior of Beta1", xlab="Beta1 Values")
+abline(v = mean(b1_samples), col="black")
+abline(v = betaT1, col="red")
+
+hist(b2_samples, nclass=30, main="Posterior of Tau", xlab="Beta2 Values")
+abline(v = mean(b2_samples), col="black")
+abline(v = tauT, col="red")
+
+hist(logsigma_samples, nclass=30, main="Posterior of Beta2", xlab="Tau values")
+abline(v = mean(logsigma_samples), col="black")
+abline(v = betaT2, col="red")
+
+# Plot the trace plots
+plot(b0_samples, type = "l", xlab="Iterations", main = "Trace plot of Alpha")
+
+plot(b1_samples, type = "l", xlab="Iterations", main = "Trace plot of Beta1")
+
+plot(b2_samples, type = "l", xlab="Iterations", main = "Trace plot of Tau")
+
+plot(logsigma_samples, type = "l", xlab="Iterations", main = "Trace plot of Beta2")
+
+# Reset the plotting layout (optional)
+par(mfrow = c(1, 1))
+```
+#########################################################################################
+Gibbs Sampler hard coded:
+```{r}
+#Chunk 27
+# Initialize parameters and variables
+n_iter <- 11000  # Number of iterations
+burn_in <- 1000  # Number of burn-in iterations
+```
+
+```{r}
+#Chunk 28
+# Initial values for Gibbs sampling
+alpha <- 2
+beta1 <- 1
+beta2 <- 0.2
+tau <- 0.5  # Initial value for tau, can be adjusted
+```
+
+
+
+```{r}
+#Chunk 29
+# Initialize parameters and variables
+tic("Gibbs")
+set.seed(123)  # Set seed for reproducibility
+
+# Create empty vectors to store samples
+alpha_samples <- beta1_samples <- beta2_samples <- tau_samples <- numeric(n_iter)
+
+# Gibbs sampling
+for (i in 1:n_iter) {
+  # Sample alpha
+  alpha_var <- 1 / ((1 / alphavar) + n * tau)
+  alpha_mean <- alpha_var * (alphamean/alphavar + tau * sum(y - beta1 * x1 - beta2 * x2))
+  alpha <- rnorm(1, mean = alpha_mean, sd = sqrt(alpha_var))
+  
+  # Sample beta1
+  beta1_var <- 1 / (1/beta1var + tau * sum(x1^2))
+  beta1_mean <- beta1_var * (beta1mean/beta1var+ tau * sum(x1 * (y - alpha - beta2 * x2)))
+  beta1 <- rnorm(1, mean = beta1_mean, sd = sqrt(beta1_var))
+  
+  # Sample beta2
+  beta2_var <- 1 / (1/beta2var + tau * sum(x2^2))
+  beta2_mean <- beta2_var * (beta2mean/beta2var+tau * sum(x2 * (y - alpha - beta1 * x1)))
+  beta2 <- rnorm(1, mean = beta2_mean, sd = sqrt(beta2_var))
+  
+  # Sample tau
+  tau_shape <- 2 + (n - 1) / 2
+  tau_rate <-0.5+ 0.5 * sum((y - alpha - beta1 * x1 - beta2 * x2)^2)
+  tau <- rgamma(1, shape = tau_shape, rate = tau_rate)
+  
+  # Store samples
+  alpha_samples[i] <- alpha
+  beta1_samples[i] <- beta1
+  beta2_samples[i] <- beta2
+  tau_samples[i] <- tau
+}
+
+# Discard burn-in samples
+alpha_samples <- alpha_samples[-(1:burn_in)]
+beta1_samples <- beta1_samples[-(1:burn_in)]
+beta2_samples <- beta2_samples[-(1:burn_in)]
+tau_samples <- tau_samples[-(1:burn_in)]
+
+# Calculate credible intervals for each parameter
+credible_intervals_alpha <- quantile(alpha_samples, c(0.025, 0.975))
+credible_intervals_beta1 <- quantile(beta1_samples, c(0.025, 0.975))
+credible_intervals_beta2 <- quantile(beta2_samples, c(0.025, 0.975))
+credible_intervals_tau <- quantile(tau_samples, c(0.025, 0.975))
+
+# Print credible intervals
+print("Credible Intervals:")
+print(paste("Alpha:", credible_intervals_alpha[1], "-", credible_intervals_alpha[2]))
+print(paste("Beta1:", credible_intervals_beta1[1], "-", credible_intervals_beta1[2]))
+print(paste("Beta2:", credible_intervals_beta2[1], "-", credible_intervals_beta2[2]))
+print(paste("Tau:", credible_intervals_tau[1], "-", credible_intervals_tau[2]))
+toc()
+```
+```{r}
+#Chunk 30
+gibbsalpha <- mean(alpha)
+print(gibbsalpha)
+gibbsbeta1<-mean(beta1)
+print(gibbsbeta1)
+gibbsbeta2<-mean(beta2)
+print(gibbsbeta2)
+gibbstau<-mean(tau)
+print(gibbstau)
+```
+
+```{r}
+#Chunk 31
+# Plot histograms
+par(mfrow = c(2, 4))
+hist(alpha_samples, main = "Alpha", xlab="Alpha Values", col="grey",border="white")
+abline(v=alphaT, col="red", lwd=2)
+abline(v=gibbsalpha, col="black", lwd=2)
+hist(beta1_samples, main = "Beta1", xlab="Beta1 Values", col="grey", border="white")
+abline(v=betaT1, col="red", lwd=2)
+abline(v=gibbsbeta1, col="black", lwd=2)
+hist(beta2_samples, main = "Beta2", xlab="Beta2 Values", col="grey", border="white")
+abline(v=betaT2, col="red", lwd=2)
+abline(v=gibbsbeta2, col="black", lwd=2)
+hist(tau_samples, main = "Tau", xlab="tau Values", col="grey", border="white")
+abline(v=tauT, col="red", lwd=2)
+abline(v=gibbstau, col="black", lwd=2)
+
+
+# Burn-in iterations to plot
+burn_in_range <- 1:burn_in
+
+# Plot alpha burn-in
+plot(burn_in_range, alpha_samples[burn_in_range], type = "l",
+     xlab = "Iteration", ylab = "Alpha",
+     main = "Burn-in Plot for Alpha", col = "black")
+abline(h=alphaT, col="red", lwd=2)
+abline(h=gibbsalpha, col="black", lwd=2)
+# Plot beta1 burn-in
+plot(burn_in_range, beta1_samples[burn_in_range], type = "l",
+     xlab = "Iteration", ylab = "Beta1",
+     main = "Burn-in Plot for Beta1", col = "black")
+abline(h=betaT1, col="red", lwd=2)
+abline(h=gibbsbeta1, col="black", lwd=2)
+# Plot beta2 burn-in
+plot(burn_in_range, beta2_samples[burn_in_range], type = "l",
+     xlab = "Iteration", ylab = "Beta2",
+     main = "Burn-in Plot for Beta2", col = "black")
+abline(h=betaT2, col="red", lwd=2)
+abline(h=gibbsbeta2, col="black", lwd=2)
+# Plot tau burn-in
+plot(burn_in_range, tau_samples[burn_in_range], type = "l",
+     xlab = "Iteration", ylab = "Tau",
+     main = "Burn-in Plot for Tau", col = "black")
+abline(h=tauT, col="red", lwd=2)
+abline(h=gibbstau, col="black", lwd=2)
+# Print summary statistics or perform further analysis as needed
+summary(alpha_samples)
+summary(beta1_samples)
+summary(beta2_samples)
+summary(tau_samples)
+```
+
+
+
+
+Gibbs Sampler R
+```{r}
+#Chunk 32
+set.seed(123)
+library(MCMCpack)
+
+# Prepare data
+data_list <- list(
+  y = y,
+  x1 = x1,
+  x2 = x2
+)
+
+# Run Gibbs sampler
+gibbs_output <- MCMCregress(y ~ x1 + x2, data = data_list, b0 = rep(0, 3), B0 = diag(1/10, 3), m0 = rep(0, 3), verbose = TRUE)
+
+# Summary of the results
+summary(gibbs_output)
+
+# Extract coefficients from the gibbs_output object
+coefficients <- as.matrix(gibbs_output)
+```
+
+
+```{r}
+#Chunk 33
+alpha_estimate <- mean(coefficients[, 1])
+beta1_estimate <- mean(coefficients[, 2])
+beta2_estimate <- mean(coefficients[, 3])
+sigma2_estimate <- mean(gibbs_output[, "sigma2"])
+
+print(alpha_estimate)
+print(beta1_estimate)
+print(beta2_estimate)
+print(sigma2_estimate)
+# Plot histograms for the intercept, coefficients, and sigma2
+par(mfrow=c(2, 4))  # Set up a 2x2 grid for plots
+
+# Plot histogram for the intercept with red and black lines
+hist(coefficients[, 1], main="Estimate for alpha", xlab="Value", col="grey", border="white")
+abline(v = alpha_estimate, col="red", lwd=2)  # Red line for the estimate
+abline(v = alphaT, col="black", lwd=2)  # Black dashed line for the true value
+
+# Plot histogram for coefficient of x1 with red and black lines
+hist(coefficients[, 2], main="Estimate for beta1", xlab="Value", col="grey", border="white")
+abline(v = beta1_estimate, col="red", lwd=2)
+abline(v = betaT1, col="black", lwd=2)
+
+# Plot histogram for coefficient of x2 with red and black lines
+hist(coefficients[, 3], main="Estimate for beta2", xlab="Value", col="grey", border="white")
+abline(v = beta2_estimate, col="red", lwd=2)
+abline(v = betaT2, col="black", lwd=2)
+
+# Plot histogram for sigma2 with red and black lines
+hist(gibbs_output[, "sigma2"], main="Estimate for tau", xlab="Value", col="grey", border="white")
+abline(v = sigma2_estimate, col="red", lwd=2)
+abline(v = tauT, col="black", lwd=2)
+
+
+
+# Define the burn-in range
+burn_in_range <- 1:burn_in
+
+# Plot burn-in for alpha (intercept)
+plot(burn_in_range, coefficients[, 1][burn_in_range], type = "l",
+     xlab = "Iteration", ylab = "Alpha",
+     main = "Burn-in Plot for Alpha", col = "black")
+abline(h=alphaT, col="red", lwd=2)
+abline(h=alpha_estimate, col="black", lwd=2)
+# Plot burn-in for beta1
+plot(burn_in_range, coefficients[, 2][burn_in_range], type = "l",
+     xlab = "Iteration", ylab = "Beta1",
+     main = "Burn-in Plot for Beta1", col = "black")
+abline(h=betaT1, col="red", lwd=2)
+abline(h=beta1_estimate, col="black", lwd=2)
+# Plot burn-in for beta2
+plot(burn_in_range, coefficients[, 3][burn_in_range], type = "l",
+     xlab = "Iteration", ylab = "Beta2",
+     main = "Burn-in Plot for Beta2", col = "black")
+abline(h=betaT2, col="red", lwd=2)
+abline(h=beta2_estimate, col="black", lwd=2)
+# Plot burn-in for tau (standard deviation)
+plot(burn_in_range, gibbs_output[, "sigma2"][burn_in_range], type = "l",
+     xlab = "Iteration", ylab = "Tau (Sigma)",
+     main = "Burn-in Plot for Tau", col = "black")
+abline(h=tauT, col="red", lwd=2)
+abline(h=sigma2_estimate, col="black", lwd=2)
+```
+```{r}
+#Chunk 34
+# Calculate 95% credible intervals for each parameter
+alpha_credible_interval <- quantile(coefficients[, 1], probs = c(0.025, 0.975))
+beta1_credible_interval <- quantile(coefficients[, 2], probs = c(0.025, 0.975))
+beta2_credible_interval <- quantile(coefficients[, 3], probs = c(0.025, 0.975))
+sigma2_credible_interval <- quantile(gibbs_output[, "sigma2"], probs = c(0.025, 0.975))
+
+# Print the credible intervals
+cat("95% Credible Interval for alpha:", alpha_credible_interval, "\n")
+cat("95% Credible Interval for beta1:", beta1_credible_interval, "\n")
+cat("95% Credible Interval for beta2:", beta2_credible_interval, "\n")
+cat("95% Credible Interval for sigma2:", sigma2_credible_interval, "\n")
+
+
+```
+########################################################################################
+Sensitivity Analysis
+
+Importance Sampling
+what happens when I change the shape and scale of taus gamma prior?
+```{r}
+#Chunk 35
+alphamean=0
+alphavar = 100
+beta1mean=0
+beta1var=100
+beta2mean = 0
+beta2var= 100
+taushape=0.5
+tauscale=0.5
+```
+
+```{r}
+#Chunk 36
+alphamean=0
+alphavar = 100
+beta1mean=0
+beta1var=100
+beta2mean = 0
+beta2var= 100
+taushape=0.75
+tauscale=0.75
+```
+changing the value of M and K
+```{r}
+#Chunk 37
+K<- 40000  #no. of prior samples
+nsamples <-100 # No. of posterior samples to take
+pred_point <-2.5 # value at which to compute the predictive distribution
+```
+
+###########################################################################################
+Gibbs Sampler
+Changing the hyperparameter values along with starting points
+```{r}
+#Chunk 41
+#Prior parameters: normal on alpha and beta, gamma on tau
+alphamean=0
+alphavar = 10
+beta1mean=0
+beta1var=10
+beta2mean = 0
+beta2var= 10
+taushape=0.5
+tauscale=0.5
+
+#Chunk 42
+# Initial values for Gibbs sampling
+alpha <- 1
+beta1 <- 1
+beta2 <- 1
+tau <- 1  # Initial value for tau, can be adjusted
+```
+
+
+###########################################################################################
+metropolis-hastings
+
+when the variance decreases the acceptence rate increases
+```{r}
+#Chunk 43
+proposalfunction = function(param){
+   mhalpha = param[1]
+   mhbeta = param[2]
+   mhc = param[3]
+   mhtau = param[4]
+   
+ #  
+ #  
+   aproposal<-rnorm(1,mhalpha,0.25^2)
+   bproposal<-rnorm(1, mhbeta, 0.25^2)
+   cproposal<-rnorm(1, mhc, 0.25^2)
+  Tproposal<-runif(1, max(0, mhtau-.2), mhtau+.2)
+  
+ # 
+   proposals<-c(aproposal,bproposal, cproposal, Tproposal)
+  return(proposals)
+}
+```
+when the variance is 1 the acceptence rate is extremely small
+```{r}
+#Chunk 44
+proposalfunction = function(param){
+   mhalpha = param[1]
+   mhbeta = param[2]
+   mhc = param[3]
+   mhtau = param[4]
+   
+ #  
+ #  
+   aproposal<-rnorm(1,mhalpha,1^2)
+   bproposal<-rnorm(1, mhbeta, 1^2)
+   cproposal<-rnorm(1, mhc, 1^2)
+  Tproposal<-runif(1, max(0, mhtau-.2), mhtau+.2)
+  
+ # 
+   proposals<-c(aproposal,bproposal, cproposal, Tproposal)
+  return(proposals)
+}
+```
+
+
+changing the priors and proposals using the same variance of 0.1
+making alpha beta1 and beta2 normal and tau gamma with shape scale mhtau which uses the current value
+```{r}
+#Chunk 45
+#run this then run the metropolis hard code
+###prior set up Chunk 12
+prior = function(param){
+    a = param[1]
+    b = param[2]
+    c = param[3]
+    sd = param[4]
+    
+    aprior = dnorm(a, sd = 5, log = T)
+    bprior = dnorm(b, sd = 5, log = T)
+    sdprior = dgamma(1,shape=1/sd,scale=1/sd)
+    cprior = dnorm(c, sd=5, log= T)
+    return(aprior+bprior+cprior+sdprior)
+}
+
+proposalfunction = function(param){
+   mhalpha = param[1]
+   mhbeta = param[2]
+   mhc = param[3]
+   mhtau = param[4]
+   
+ #  
+ #  
+   aproposal<-rnorm(1,mhalpha,0.1^2)
+   bproposal<-rnorm(1, mhbeta, 0.1^2)
+   cproposal<-rnorm(1, mhc, 0.1^2)
+  Tproposal<-rgamma(1,shape=mhtau,scale=mhtau)
+  
+ # 
+   proposals<-c(aproposal,bproposal, cproposal, Tproposal)
+  return(proposals)
+}
+```
+
+changing the data sizes
+
+```{r}
+#Chunk 5
+#Simulating the data
+set.seed(123)
+
+x1 <- rnorm(15, mean = 0, sd=10)
+x2 <- rnorm(15, mean = 0, sd=10)
+
+n=length(x1)
+
+error = rnorm(n, mean=0, sd=(1/tauT))
+
+y = alphaT + betaT1*x1 + betaT2*x2 + error
+data<-data.frame(y,x1,x2)
+
+ggplot(data, aes(x2,y))+geom_point()
+ggplot(data,aes(x1,y))+geom_point()
+```
+
+```{r}
+#Chunk 5
+#Simulating the data
+set.seed(123)
+
+x1 <- rnorm(100, mean = 0, sd=10)
+x2 <- rnorm(100, mean = 0, sd=10)
+
+n=length(x1)
+
+error = rnorm(n, mean=0, sd=(1/tauT))
+
+y = alphaT + betaT1*x1 + betaT2*x2 + error
+data<-data.frame(y,x1,x2)
+
+ggplot(data, aes(x2,y))+geom_point()
+ggplot(data,aes(x1,y))+geom_point()
+```
